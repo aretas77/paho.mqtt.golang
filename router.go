@@ -79,7 +79,11 @@ func (r *route) match(topic string) bool {
 type router struct {
 	sync.RWMutex
 	routes         *list.List
+	hermesRoutes   *list.List
 	defaultHandler MessageHandler
+	hermesHandler  MessageHandler
+	mac            string
+	hermesTopic    string
 	messages       chan *packets.PublishPacket
 	stop           chan bool
 }
@@ -87,7 +91,11 @@ type router struct {
 // newRouter returns a new instance of a Router and channel which can be used to tell the Router
 // to stop
 func newRouter() (*router, chan bool) {
-	router := &router{routes: list.New(), messages: make(chan *packets.PublishPacket), stop: make(chan bool)}
+	router := &router{
+		routes:       list.New(),
+		hermesRoutes: list.New(),
+		messages:     make(chan *packets.PublishPacket), stop: make(chan bool),
+	}
 	stop := router.stop
 	return router, stop
 }
@@ -108,12 +116,48 @@ func (r *router) addRoute(topic string, callback MessageHandler) {
 	r.routes.PushBack(&route{topic: topic, callback: callback})
 }
 
+// addHermesRoute has the same logic as addRoute, however, this is used
+// only for internal route matching for Hermes.
+func (r *router) addHermesRoute(topic string, callback MessageHandler) {
+	r.Lock()
+	defer r.Unlock()
+	for e := r.hermesRoutes.Front(); e != nil; e = e.Next() {
+		if e.Value.(*route).topic == topic {
+			r := e.Value.(*route)
+			r.callback = callback
+			return
+		}
+	}
+	r.hermesRoutes.PushBack(&route{topic: topic, callback: callback})
+}
+
+// setDefaultHermesHandler assigns a default callback that will be called if
+// no matching Route is found for an incoming Publish for Hermes.
+func (r *router) setDefaultHermesHandler(handler MessageHandler) {
+	r.Lock()
+	defer r.Unlock()
+	r.hermesHandler = handler
+}
+
 // deleteRoute takes a route string, looks for a matching Route in the list of Routes. If
 // found it removes the Route from the list.
 func (r *router) deleteRoute(topic string) {
 	r.Lock()
 	defer r.Unlock()
 	for e := r.routes.Front(); e != nil; e = e.Next() {
+		if e.Value.(*route).topic == topic {
+			r.routes.Remove(e)
+			return
+		}
+	}
+}
+
+// deleteHermesRoute has the same logic as deleteRoute method but it removes
+// a Route from hermes route list.
+func (r *router) deleteHermesRoute(topic string) {
+	r.Lock()
+	defer r.Unlock()
+	for e := r.hermesRoutes.Front(); e != nil; e = e.Next() {
 		if e.Value.(*route).topic == topic {
 			r.routes.Remove(e)
 			return
@@ -141,6 +185,24 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 				sent := false
 				r.RLock()
 				m := messageFromPublish(message, client.ackFunc(message))
+
+				for e := r.hermesRoutes.Front(); e != nil; e = e.Next() {
+					if e.Value.(*route).match(message.TopicName) {
+						hd := e.Value.(*route).callback
+						go func() {
+							hd(client, m)
+							m.Ack()
+						}()
+						sent = true
+					}
+				}
+
+				// Hermes message was processed - we can stop further processing.
+				if sent {
+					r.RUnlock()
+					return
+				}
+
 				handlers := []MessageHandler{}
 				for e := r.routes.Front(); e != nil; e = e.Next() {
 					if e.Value.(*route).match(message.TopicName) {
