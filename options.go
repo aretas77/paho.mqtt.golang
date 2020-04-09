@@ -83,6 +83,15 @@ type ClientOptions struct {
 	MessageChannelDepth     uint
 	ResumeSubs              bool
 	HTTPHeaders             http.Header
+	UseHermes               bool
+	HermesOptions           HermesOptions
+}
+
+// HermesOptions contains information about the device its operating on
+type HermesOptions struct {
+	Mac             string
+	BatteryLeftMah  float32
+	TotalBatteryMah float32
 }
 
 // NewClientOptions will create a new ClientClientOptions type with some
@@ -370,5 +379,31 @@ func (o *ClientOptions) SetMessageChannelDepth(s uint) *ClientOptions {
 // opening handshake.
 func (o *ClientOptions) SetHTTPHeaders(h http.Header) *ClientOptions {
 	o.HTTPHeaders = h
+	return o
+}
+
+// SetUseHermes ...
+func (o *ClientOptions) SetUseHermes(h bool) *ClientOptions {
+	o.UseHermes = h
+	return o
+}
+
+// SetDeviceMac sets the MAC address of the device. It is used as identifier
+// for the library that is running on the device.
+func (o *ClientOptions) SetDeviceMac(mac string) *ClientOptions {
+	o.HermesOptions.Mac = mac
+	return o
+}
+
+// SetTotalBatteryMah sets the total battery size in mAh that is available
+// for a client.
+func (o *ClientOptions) SetTotalBatteryMah(battery float32) *ClientOptions {
+	o.HermesOptions.TotalBatteryMah = battery
+	return o
+}
+
+// SetBatteryLeftMah dynamically sets the left over battery size of the client.
+func (o *ClientOptions) SetBatteryLeftMah(battery float32) *ClientOptions {
+	o.HermesOptions.BatteryLeftMah = battery
 	return o
 }
