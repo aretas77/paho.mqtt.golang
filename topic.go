@@ -84,3 +84,28 @@ func validateTopicAndQos(topic string, qos byte) error {
 	}
 	return nil
 }
+
+// splitTopicSegments6 splits the topic into n segments.
+// Example:
+//	hermes/node/global/mac/hades/model/receive
+//	tok[0] = hermes
+//	tok[1] = node
+//	...
+//	tok[6] = receive
+//	etc.
+func splitTopicSegments(topic string) (result []string) {
+	tok := strings.Split(topic, "/")
+	return append(result, tok...)
+}
+
+// parseTopicMac will try to parse the MAC address from the given topic and
+// if no MAC address is given - return empty string.
+func parseTopicMac(topic string) string {
+	tokens := strings.Split(topic, "/")
+	for _, tok := range tokens {
+		if len(strings.Split(tok, ":")) == 6 {
+			return tok
+		}
+	}
+	return ""
+}
