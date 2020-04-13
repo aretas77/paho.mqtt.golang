@@ -131,6 +131,12 @@ func NewClientOptions() *ClientOptions {
 		WriteTimeout:            0, // 0 represents timeout disabled
 		ResumeSubs:              false,
 		HTTPHeaders:             make(map[string][]string),
+		UseHermes:               false,
+		HermesOptions: HermesOptions{
+			Mac:             "",
+			BatteryLeftMah:  0,
+			TotalBatteryMah: 0,
+		},
 	}
 	return o
 }
