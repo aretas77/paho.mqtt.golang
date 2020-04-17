@@ -15,6 +15,9 @@ const (
 	modelsDir = "./models"
 	// hermesPrefix will be used to match topics related to internal library.
 	hermesPrefix = "hermes"
+	// hadesPrefix will be used to match topics related to Hades observer
+	// is mainly used for publishing.
+	hadesPrefix = "hades"
 	// TimerSendInterval is used for setting the Send interval for the Timer.
 	TimerSendInterval = "timerSendInterval"
 	// TimerReceiveInterval is used for setting the Receive interval for the Timer.
@@ -30,6 +33,8 @@ type hermes struct {
 	// not used - should only be used for one device to be aware of its power.
 	batteryLeftMah  float32
 	totalBatteryMah float32
+	lastModelUpdate time.Time
+	initialModel    bool
 
 	currentSendInterval map[string]time.Duration
 	sendTicker          map[string]*time.Ticker
@@ -51,10 +56,19 @@ type Timer struct {
 	mac       string
 }
 
+// TopicHandler is used for easier topic subscription - it will contain the
+// topic, the topics' QoS and handler to process messages on the given Topic.
 type TopicHandler struct {
 	Topic   string
 	QoS     byte
 	Handler func(c Client, msg Message)
+}
+
+// RequestModelPayload contains data for the hermes to request a new model.
+type RequestModelPayload struct {
+	mac             string
+	lastModelUpdate time.Time
+	initial         bool
 }
 
 // Initialize will initialize the hermes structure which will be responsible
@@ -70,6 +84,7 @@ func (h *hermes) Initialize() {
 	h.canSend = make(map[string]bool)
 	h.sendTicker = make(map[string]*time.Ticker)
 
+	h.initialModel = true
 	h.interpreter = python3.PyImport_ImportModule("interpreter")
 	if h.interpreter == nil {
 		CRITICAL.Println(HER, "Initialize() failed to import interpreter")
@@ -101,6 +116,27 @@ func (h *hermes) GetHandlers() []TopicHandler {
 	return h.handlers
 }
 
+// RequestNewModel should send a request for a model to the Hades server. A handle
+// should receive the requested model.
+func (h *hermes) RequestNewModel(c Client, mac string) error {
+	requestTopic := fmt.Sprintf("%s/global/%s/models/request", hadesPrefix, mac)
+	payload := RequestModelPayload{
+		mac:             mac,
+		lastModelUpdate: h.lastModelUpdate,
+		initial:         h.initialModel,
+	}
+
+	// XXX: We currently do not know when Hades will be ready - maybe it won't
+	// send a model?
+	token := c.Publish(requestTopic, 1, false, &payload)
+	if token.Error() != nil {
+		WARN.Println(HER, "request for model has failed")
+		return token.Error()
+	}
+
+	return nil
+}
+
 // HandleReceiveModel is called when a model was received. An interpreter is
 // called to parse the received values.
 func (h *hermes) HandleReceiveModel(c Client, msg Message) {
@@ -108,6 +144,7 @@ func (h *hermes) HandleReceiveModel(c Client, msg Message) {
 
 	// retrieve MAC address so we should know for whom to set the timer.
 	segments := splitTopicSegments(msg.Topic())
+	h.initialModel = false
 
 	// read the values from the model and send to the ticker
 	h.setTimer <- &Timer{

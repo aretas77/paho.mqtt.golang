@@ -115,6 +115,8 @@ type client struct {
 	options         ClientOptions
 	optionsMu       sync.Mutex // Protects the options in a few limited cases where needed for testing
 	workers         sync.WaitGroup
+	useHermes       bool
+	hermes          *hermes
 }
 
 // NewClient will create an MQTT v3.1.1 client with all of the options specified
@@ -142,6 +144,19 @@ func NewClient(o *ClientOptions) Client {
 	c.messageIds = messageIds{index: make(map[uint16]tokenCompletor)}
 	c.msgRouter, c.stopRouter = newRouter()
 	c.msgRouter.setDefaultHandler(c.options.DefaultPublishHandler)
+
+	if c.options.UseHermes {
+		c.useHermes = c.options.UseHermes
+	} else {
+		c.useHermes = false
+	}
+
+	if c.useHermes {
+		c.hermes = &hermes{}
+		c.hermes.batteryLeftMah = o.HermesOptions.BatteryLeftMah
+		c.hermes.totalBatteryMah = o.HermesOptions.TotalBatteryMah
+	}
+
 	return c
 }
 
@@ -361,6 +376,19 @@ func (c *client) Connect() Token {
 			c.resume(c.options.ResumeSubs)
 		} else {
 			c.persist.Reset()
+		}
+
+		if c.useHermes {
+			c.hermes.Initialize()
+
+			handlers := c.hermes.GetHandlers()
+			for _, handler := range handlers {
+				c.Subscribe(handler.Topic, handler.QoS, handler.Handler)
+				DEBUG.Println(CLI, "hermes subscribed to ", handler.Topic)
+			}
+
+			c.workers.Add(1)
+			go c.hermes.sendTimer(c)
 		}
 
 		DEBUG.Println(CLI, "exit startClient")
@@ -620,6 +648,18 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 		token.flowComplete()
 		return token
 	}
+
+	mac := parseTopicMac(topic)
+	DEBUG.Println(CLI, "parsed MAC = "+mac)
+
+	// for QoS >= 1 we can bypass the Hermes timer algorithm, otherwise -
+	// drop the packet if the timer for a particular MAC device does not allow
+	// publishing packets.
+	if c.useHermes && qos < 1 && !c.hermes.GetCanSend(mac) {
+		token.setError(fmt.Errorf("QoS too small or send disabled"))
+		return token
+	}
+
 	pub := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	pub.Qos = qos
 	pub.TopicName = topic
@@ -698,8 +738,16 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 		topic = strings.TrimPrefix(topic, "$queue/")
 	}
 
-	if callback != nil {
-		c.msgRouter.addRoute(topic, callback)
+	// will check whether the subscribe came from the client using the library
+	// or an internal call.
+	if strings.HasPrefix(topic, hermesPrefix) {
+		if callback != nil && c.useHermes {
+			c.msgRouter.addHermesRoute(topic, callback)
+		}
+	} else {
+		if callback != nil {
+			c.msgRouter.addRoute(topic, callback)
+		}
 	}
 
 	token.subs = append(token.subs, topic)
