@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -92,7 +93,7 @@ func (h *hermes) Initialize() {
 
 	// initialize the topics with their handlers for hermes
 	h.handlers = []TopicHandler{
-		{"node/+/+/hades/modes/receive", 1, h.HandleReceiveModel},
+		{"node/+/+/hades/model/receive", 1, h.HandleReceiveModel},
 	}
 }
 
@@ -119,16 +120,21 @@ func (h *hermes) GetHandlers() []TopicHandler {
 // RequestNewModel should send a request for a model to the Hades server. A handle
 // should receive the requested model.
 func (h *hermes) RequestNewModel(c Client, mac string) error {
-	requestTopic := fmt.Sprintf("%s/global/%s/models/request", hadesPrefix, mac)
 	payload := RequestModelPayload{
 		mac:             mac,
 		lastModelUpdate: h.lastModelUpdate,
 		initial:         h.initialModel,
 	}
 
+	resp, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
 	// XXX: We currently do not know when Hades will be ready - maybe it won't
 	// send a model?
-	token := c.Publish(requestTopic, 1, false, &payload)
+	requestTopic := fmt.Sprintf("%s/global/%s/model/request", hadesPrefix, mac)
+	token := c.Publish(requestTopic, 1, false, resp)
 	if token.Error() != nil {
 		WARN.Println(HER, "request for model has failed")
 		return token.Error()
@@ -137,20 +143,30 @@ func (h *hermes) RequestNewModel(c Client, mac string) error {
 	return nil
 }
 
+func (h *hermes) PingHades() bool {
+
+	return false
+}
+
+func (h *hermes) IsConnectedHades() bool {
+	return false
+}
+
 // HandleReceiveModel is called when a model was received. An interpreter is
 // called to parse the received values.
 func (h *hermes) HandleReceiveModel(c Client, msg Message) {
 	log.Println("received")
 
 	// retrieve MAC address so we should know for whom to set the timer.
-	segments := splitTopicSegments(msg.Topic())
+	mac := parseTopicMac(msg.Topic())
+	h.saveModel(msg.Payload(), mac)
 	h.initialModel = false
 
 	// read the values from the model and send to the ticker
 	h.setTimer <- &Timer{
 		duration:  time.Second * 10,
 		timerType: TimerSendInterval,
-		mac:       segments[3],
+		mac:       mac,
 	}
 }
 

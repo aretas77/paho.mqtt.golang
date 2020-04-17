@@ -92,6 +92,9 @@ type Client interface {
 	// OptionsReader returns a ClientOptionsReader which is a copy of the clientoptions
 	// in use by the client.
 	OptionsReader() ClientOptionsReader
+	// HermesReader returns a ClientHermesReader which is a pointer to the real
+	// hermes struct.
+	HermesReader() *ClientHermesReader
 }
 
 // client implements the Client interface
@@ -385,6 +388,7 @@ func (c *client) Connect() Token {
 			for _, handler := range handlers {
 				c.Subscribe(handler.Topic, handler.QoS, handler.Handler)
 				DEBUG.Println(CLI, "hermes subscribed to ", handler.Topic)
+				fmt.Println("hello")
 			}
 
 			c.workers.Add(1)
@@ -1004,6 +1008,11 @@ func (c *client) Unsubscribe(topics ...string) Token {
 func (c *client) OptionsReader() ClientOptionsReader {
 	r := ClientOptionsReader{options: &c.options}
 	return r
+}
+
+// HermesReader returns a pointer to the hermes struct used by the client.
+func (c *client) HermesReader() *ClientHermesReader {
+	return &ClientHermesReader{hermes: c.hermes}
 }
 
 //DefaultConnectionLostHandler is a definition of a function that simply

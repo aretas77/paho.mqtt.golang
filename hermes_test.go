@@ -11,13 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMain(m *testing.M) {
-	os.Setenv("PYTHONPATH", "./")
-	os.Exit(m.Run())
-}
-
 func TestRequestNewModel(t *testing.T) {
 	clientOptions := NewClientOptions()
+	mac := "AA:BB:CC:DD:EE:FF"
+
+	path := fmt.Sprintf("models/model_%s.tflite", mac)
+	os.Remove(path)
 
 	// Override some default values
 	clientOptions.UseHermes = true
@@ -26,16 +25,27 @@ func TestRequestNewModel(t *testing.T) {
 	clientOptions.SetUsername("devices")
 	clientOptions.SetPassword("secretkey987")
 	clientOptions.SetCleanSession(true)
+	clientOptions.SetProtocolVersion(3)
 	client := NewClient(clientOptions)
 
 	token := client.Connect()
-	if token.WaitTimeout(30); token.Error() != nil {
+	if token.WaitTimeout(time.Minute * 2); token.Error() != nil {
 		t.Fatalf("client failed to connect: %s", token.Error())
 	}
 	assert.True(t, client.IsConnected())
 
-	// At this point we have a connection - send a request for a model.
+	// send a request to the server
+	hermes := client.HermesReader()
+	if err := hermes.CallRequestNewModel(client, mac); err != nil {
+		t.Fatalf("hermes failed to request a new model: %s", err)
+	}
 
+	// wait for the file
+	time.Sleep(time.Second * 2)
+
+	// check if file exists
+	_, err := os.Stat(path)
+	assert.False(t, os.IsNotExist(err))
 }
 
 func TestSaveModel(t *testing.T) {
