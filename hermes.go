@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"sync"
 	"time"
 
@@ -47,6 +46,9 @@ type hermes struct {
 	// these are control channels which are used to control the timer.
 	setTimer   chan *Timer
 	resetTimer chan string
+
+	serverAlive bool
+	lastCheck   time.Time
 }
 
 // timer struct will be used to send the data to set the timer durations for
@@ -94,6 +96,7 @@ func (h *hermes) Initialize() {
 	// initialize the topics with their handlers for hermes
 	h.handlers = []TopicHandler{
 		{"node/+/+/hades/model/receive", 1, h.HandleReceiveModel},
+		{"node/+/+/hades/pong", 1, h.HandlePingResponse},
 	}
 }
 
@@ -143,7 +146,14 @@ func (h *hermes) RequestNewModel(c Client, mac string) error {
 	return nil
 }
 
-func (h *hermes) PingHades() bool {
+// PingHades ...
+func (h *hermes) PingHades(c Client, mac string) bool {
+	pingTopic := fmt.Sprintf("%s/global/%s/ping", hadesPrefix, mac)
+	token := c.Publish(pingTopic, 1, false, nil)
+	if token.Error() != nil {
+		WARN.Println(HER, "failed to ping hades")
+		return false
+	}
 
 	return false
 }
@@ -155,11 +165,11 @@ func (h *hermes) IsConnectedHades() bool {
 // HandleReceiveModel is called when a model was received. An interpreter is
 // called to parse the received values.
 func (h *hermes) HandleReceiveModel(c Client, msg Message) {
-	log.Println("received")
-
 	// retrieve MAC address so we should know for whom to set the timer.
 	mac := parseTopicMac(msg.Topic())
 	h.saveModel(msg.Payload(), mac)
+
+	// mark that initial model is received
 	h.initialModel = false
 
 	// read the values from the model and send to the ticker
@@ -168,6 +178,13 @@ func (h *hermes) HandleReceiveModel(c Client, msg Message) {
 		timerType: TimerSendInterval,
 		mac:       mac,
 	}
+}
+
+// HandlePingResponse is called when a Pong from server was received. It means
+// that the server is alive.
+func (h *hermes) HandlePingResponse(c Client, msg Message) {
+	h.lastCheck = time.Now()
+	h.serverAlive = true
 }
 
 // GetCanSend will return whether the timer allows to send the data for the
