@@ -7,7 +7,6 @@
 
 import sys
 import os
-from os import path
 from importlib import import_module
 
 # check for required libraries and try to import them.
@@ -20,46 +19,52 @@ for (name, short) in libnames:
     else:
         globals()[short] = lib
 
-"""Interpreter class is responsible for loading the TensorFlow Lite model with
-given values and getting some kind of output from it and returning to the
-caller.
-"""
+
 class Interpreter:
-    models="models"
+    """Interpreter class is responsible for loading the TensorFlow Lite model
+    with given values and getting some kind of output from it and returning to
+    the caller.
+    """
+    models = "models"
 
     def __init__(self, mac, path):
         self.mac = mac
         self.modelname = "model_" + mac
         self.path = path
-        self.models_dir = path + "/" + self.models
+        self.models_dir = os.path.join(path, self.models)
 
-        #print(self.check())
+        # print(self.check())
 
-    # Load TFLite model and allocate tensors.
     def init_interpreter(self, path):
+        """init_interpreter will load a TensorFlow Lite model and allocate the
+        tensors.
+        """
         interpreter = tf.lite.Interpreter(model_path=path)
         interpreter.allocate_tensors()
         return interpreter
 
     # check should determine whether a model exists or not.
     def check(self):
-        return path.exists(self.models_dir + "/" + self.modelname)
+        return os.path.exists(self.models_dir + "/" + self.modelname)
 
-    """test_inference runs a 'test run' of TensorFlow Lite interpreter with a
-    default model for a FizzBuzz problem. The goal of this method is to test
-    whether TensorFlow Lite works as expected and its possible to do inference.
-
-    Suppose we want to infere a 4 with binary length of 7:
-        bin(4) = 0000100
-        reverse(0000100) = 0010000
-
-        bin(16) = 0010000
-        reverse(001000) = 0000100
-
-    @number - is a number in binary form in reverse.
-    """
     def test_inference(self, number):
-        interpreter = self.init_interpreter(self.models + "/fizzbuzz_model.tflite")
+        """test_inference runs a 'test run' of TensorFlow Lite interpreter with
+        a default model for a FizzBuzz problem. The goal of this method is to
+        test whether TensorFlow Lite works as expected and its possible to do
+        inference.
+
+        Suppose we want to infere a 4 with binary length of 7:
+            bin(4) = 0000100
+            reverse(0000100) = 0010000
+
+            bin(16) = 0010000
+            reverse(001000) = 0000100
+
+        Args:
+            number: is a number in binary form in reverse.
+        """
+        fizzbuzz = os.path.join(self.models, "fizzbuzz_model.tflite")
+        interpreter = self.init_interpreter(fizzbuzz)
 
         # Get input and output tensors.
         input_details = interpreter.get_input_details()
@@ -84,12 +89,11 @@ class Interpreter:
         output_data = interpreter.get_tensor(output_details[0]['index'])
         return output_data[0].tolist()
 
-
-    """assert_shape will be used to check whether an input or output shape
-    corresponds to the expected shape. Example:
-        assert_shape(input_shape, [1, 7, None, 7])
-    """
-    def assert_shape(self, x, shape:list):
+    def assert_shape(self, x, shape: list):
+        """assert_shape will be used to check whether an input or output shape
+        corresponds to the expected shape. Example:
+            assert_shape(input_shape, [1, 7, None, 7])
+        """
         assert len(x['shape']) == len(shape), (x['shape'], shape)
         for _a, _b in zip(x['shape'], shape):
             if isinstance(_b, int):
@@ -100,19 +104,22 @@ def start(device_mac):
     # We need to get current directory name through environment variable.
     # TODO: mmmm? this whole interpreter stuff shouldn't even be here.
     current_dir = os.environ["PYTHONPATH"]
-
     interpreter = Interpreter(device_mac, current_dir)
+
 
 """
 Methods used primarily for TensorFlow Lite testing.
 """
 
-# test is used for unit testing to test python3 integration with Go.
+
 def test(test_input):
+    # test is used for unit testing to test python3 integration with Go.
     return test_input
+
 
 def test_inference(number):
     interpreter = Interpreter("", "")
     return interpreter.test_inference(number)
 
-#test_inference(5)
+
+start("AA:BB:CC:DD:EE:FF")
