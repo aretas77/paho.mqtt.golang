@@ -159,7 +159,9 @@ func (h *hermes) PingHades(c Client, mac string) bool {
 }
 
 func (h *hermes) IsConnectedHades() bool {
-	return false
+	h.rwMutex.RLock()
+	defer h.rwMutex.RUnlock()
+	return h.serverAlive
 }
 
 // HandleReceiveModel is called when a model was received. An interpreter is
@@ -183,6 +185,9 @@ func (h *hermes) HandleReceiveModel(c Client, msg Message) {
 // HandlePingResponse is called when a Pong from server was received. It means
 // that the server is alive.
 func (h *hermes) HandlePingResponse(c Client, msg Message) {
+	h.rwMutex.Lock()
+	defer h.rwMutex.Unlock()
+
 	h.lastCheck = time.Now()
 	h.serverAlive = true
 }

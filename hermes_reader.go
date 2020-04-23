@@ -12,8 +12,8 @@ func (r *ClientHermesReader) CallRequestNewModel(c Client, mac string) error {
 }
 
 // CallPingHades will call internal hermes PingHades method.
-func (r *ClientHermesReader) CallPingHades() bool {
-	return r.hermes.PingHades()
+func (r *ClientHermesReader) CallPingHades(c Client, mac string) bool {
+	return r.hermes.PingHades(c, mac)
 }
 
 // GetHandlers will return a copy of subscribed handlers.
