@@ -69,9 +69,16 @@ type TopicHandler struct {
 
 // RequestModelPayload contains data for the hermes to request a new model.
 type RequestModelPayload struct {
-	mac             string
-	lastModelUpdate time.Time
-	initial         bool
+	MAC             string    `json:"mac"`
+	LastModelUpdate time.Time `json:"last_model_update"`
+	Initial         bool      `json:"initial"`
+}
+
+// SendIntervalPayload contains data for the hermes to process the received
+// send interval change request.
+type SendIntervalPayload struct {
+	MAC          string `json:"mac"`
+	SendInterval int    `json:"send_interval"`
 }
 
 // Initialize will initialize the hermes structure which will be responsible
@@ -171,9 +178,9 @@ func (h *hermes) GetCanSend(mac string) bool {
 // should receive the requested model.
 func (h *hermes) RequestNewModel(c Client, mac string) error {
 	payload := RequestModelPayload{
-		mac:             mac,
-		lastModelUpdate: h.lastModelUpdate,
-		initial:         h.initialModel,
+		MAC:             mac,
+		LastModelUpdate: h.lastModelUpdate,
+		Initial:         h.initialModel,
 	}
 
 	resp, err := json.Marshal(payload)
@@ -195,9 +202,9 @@ func (h *hermes) RequestNewModel(c Client, mac string) error {
 
 func (h *hermes) RequestNewInterval(c Client, mac string) error {
 	payload := RequestModelPayload{
-		mac:             mac,
-		lastModelUpdate: h.lastModelUpdate,
-		initial:         h.initialModel,
+		MAC:             mac,
+		LastModelUpdate: h.lastModelUpdate,
+		Initial:         h.initialModel,
 	}
 
 	resp, err := json.Marshal(payload)
@@ -221,8 +228,9 @@ func (h *hermes) IsConnectedHades() bool {
 	return h.serverAlive
 }
 
-// HandleReceiveModel is called when a model was received. An interpreter is
+// HandleReceiveModel is called when a model was received. Interpreter should
 // called to parse the received values.
+// TODO: implement interpreter call.
 func (h *hermes) HandleReceiveModel(c Client, msg Message) {
 	// retrieve MAC address so we should know for whom to set the timer.
 	mac := parseTopicMac(msg.Topic())
@@ -239,11 +247,24 @@ func (h *hermes) HandleReceiveModel(c Client, msg Message) {
 	}
 }
 
+// HandleReceiveInterval is called when a new send interval was received from
+// a server.
 func (h *hermes) HandleReceiveInterval(c Client, msg Message) {
 	mac := parseTopicMac(msg.Topic())
 
+	payload := SendIntervalPayload{}
+	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+		WARN.Println(HER, "failed to parse received interval")
+	}
+
+	if payload.SendInterval == 0 || mac == "" {
+		WARN.Println(HER, "received invalid send interval = ", payload.SendInterval)
+		return
+	}
+
+	WARN.Println(HER, "received new interval")
 	h.setTimer <- &Timer{
-		duration:  time.Second * 10,
+		duration:  time.Minute * time.Duration(payload.SendInterval),
 		timerType: TimerSendInterval,
 		mac:       mac,
 	}
@@ -282,7 +303,7 @@ func (h *hermes) sendTimer(c *client) {
 		case newTime := <-h.setTimer:
 			mac := newTime.mac
 
-			DEBUG.Printf("%s received set %s event (MAC = %s)", HER,
+			WARN.Printf("%s received set %s event (MAC = %s)", HER,
 				newTime.timerType, mac)
 			// set a new interval for sending
 			if newTime.timerType == TimerSendInterval {
