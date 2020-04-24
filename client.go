@@ -388,7 +388,6 @@ func (c *client) Connect() Token {
 			for _, handler := range handlers {
 				c.Subscribe(handler.Topic, handler.QoS, handler.Handler)
 				DEBUG.Println(CLI, "hermes subscribed to ", handler.Topic)
-				fmt.Println("hello")
 			}
 
 			c.workers.Add(1)
