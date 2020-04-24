@@ -29,7 +29,7 @@ class Interpreter:
 
     def __init__(self, mac, path):
         self.mac = mac
-        self.modelname = "model_" + mac
+        self.modelname = "model_" + mac + ".tflite"
         self.path = path
         self.models_dir = os.path.join(path, self.models)
 
@@ -105,6 +105,7 @@ def start(device_mac):
     # TODO: mmmm? this whole interpreter stuff shouldn't even be here.
     current_dir = os.environ["PYTHONPATH"]
     interpreter = Interpreter(device_mac, current_dir)
+    return
 
 
 """
