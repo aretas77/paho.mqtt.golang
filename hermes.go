@@ -86,6 +86,7 @@ func (h *hermes) Initialize() {
 	h.resetTimer = make(chan string)
 	h.canSend = make(map[string]bool)
 	h.sendTicker = make(map[string]*time.Ticker)
+	h.currentSendInterval = make(map[string]time.Duration)
 
 	h.initialModel = true
 	h.interpreter = python3.PyImport_ImportModule("interpreter")
@@ -96,7 +97,7 @@ func (h *hermes) Initialize() {
 	// initialize the topics with their handlers for hermes
 	h.handlers = []TopicHandler{
 		{"node/+/+/hades/model/receive", 1, h.HandleReceiveModel},
-		{"node/+/+/hades/pong", 1, h.HandlePingResponse},
+		{"node/+/+/hades/interval/receive", 1, h.HandleReceiveInterval},
 	}
 }
 
@@ -110,6 +111,16 @@ func (h *hermes) saveModel(model []byte, mac string) {
 	}
 }
 
+// SetSendInterval will set the given send interval as the current send
+// interval for the given device.
+func (h *hermes) SetSendInterval(mac string, interval time.Duration) {
+	h.setTimer <- &Timer{
+		duration:  interval,
+		timerType: TimerSendInterval,
+		mac:       mac,
+	}
+}
+
 // GetHandlers will return the initialized handlers to the caller with prepended
 // hermesPrefix.
 func (h *hermes) GetHandlers() []TopicHandler {
@@ -118,6 +129,42 @@ func (h *hermes) GetHandlers() []TopicHandler {
 	}
 
 	return h.handlers
+}
+
+// GetCurrentSendInterval will return the currently used send interval for the
+// appropriate MAC device.
+func (h *hermes) GetCurrentSendInterval(mac string) time.Duration {
+	h.rwMutex.Lock()
+	defer h.rwMutex.Unlock()
+
+	// no rules are set - allow send
+	if h.currentSendInterval[mac] == 0 {
+		return time.Second * 1
+	}
+
+	return h.currentSendInterval[mac]
+}
+
+// GetCanSend will return whether the timer allows to send the data for the
+// library. It will wait for the ticker to finish and set the canSend flag or
+// set canSend as false by default (if ticker hasn't ticked).
+func (h *hermes) GetCanSend(mac string) bool {
+	h.rwMutex.Lock()
+	defer h.rwMutex.Unlock()
+
+	// no rules are set - allow send
+	if len(h.canSend) == 0 || h.sendTicker[mac] == nil {
+		return true
+	}
+
+	select {
+	case <-h.sendTicker[mac].C:
+		h.canSend[mac] = true
+	default:
+		h.canSend[mac] = false
+	}
+
+	return h.canSend[mac]
 }
 
 // RequestNewModel should send a request for a model to the Hades server. A handle
@@ -146,16 +193,26 @@ func (h *hermes) RequestNewModel(c Client, mac string) error {
 	return nil
 }
 
-// PingHades ...
-func (h *hermes) PingHades(c Client, mac string) bool {
-	pingTopic := fmt.Sprintf("%s/global/%s/ping", hadesPrefix, mac)
-	token := c.Publish(pingTopic, 1, false, nil)
-	if token.Error() != nil {
-		WARN.Println(HER, "failed to ping hades")
-		return false
+func (h *hermes) RequestNewInterval(c Client, mac string) error {
+	payload := RequestModelPayload{
+		mac:             mac,
+		lastModelUpdate: h.lastModelUpdate,
+		initial:         h.initialModel,
 	}
 
-	return false
+	resp, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	requestTopic := fmt.Sprintf("%s/global/%s/interval/request", hadesPrefix, mac)
+	token := c.Publish(requestTopic, 1, false, resp)
+	if token.Error() != nil {
+		WARN.Println(HER, "request for send interval has failed")
+		return token.Error()
+	}
+
+	return nil
 }
 
 func (h *hermes) IsConnectedHades() bool {
@@ -182,36 +239,14 @@ func (h *hermes) HandleReceiveModel(c Client, msg Message) {
 	}
 }
 
-// HandlePingResponse is called when a Pong from server was received. It means
-// that the server is alive.
-func (h *hermes) HandlePingResponse(c Client, msg Message) {
-	h.rwMutex.Lock()
-	defer h.rwMutex.Unlock()
+func (h *hermes) HandleReceiveInterval(c Client, msg Message) {
+	mac := parseTopicMac(msg.Topic())
 
-	h.lastCheck = time.Now()
-	h.serverAlive = true
-}
-
-// GetCanSend will return whether the timer allows to send the data for the
-// library. It will wait for the ticker to finish and set the canSend flag or
-// set canSend as false by default (if ticker hasn't ticked).
-func (h *hermes) GetCanSend(mac string) bool {
-	h.rwMutex.Lock()
-	defer h.rwMutex.Unlock()
-
-	// no rules are set - allow send
-	if len(h.canSend) == 0 || h.sendTicker[mac] == nil {
-		return true
+	h.setTimer <- &Timer{
+		duration:  time.Second * 10,
+		timerType: TimerSendInterval,
+		mac:       mac,
 	}
-
-	select {
-	case <-h.sendTicker[mac].C:
-		h.canSend[mac] = true
-	default:
-		h.canSend[mac] = false
-	}
-
-	return h.canSend[mac]
 }
 
 // Reset will reset the Hermes framework.
@@ -247,6 +282,8 @@ func (h *hermes) sendTimer(c *client) {
 		case newTime := <-h.setTimer:
 			mac := newTime.mac
 
+			DEBUG.Printf("%s received set %s event (MAC = %s)", HER,
+				newTime.timerType, mac)
 			// set a new interval for sending
 			if newTime.timerType == TimerSendInterval {
 				h.rwMutex.Lock()
@@ -260,6 +297,7 @@ func (h *hermes) sendTimer(c *client) {
 				h.currentSendInterval[mac] = newTime.duration
 				h.sendTicker[mac] = time.NewTicker(newTime.duration)
 				h.canSend[mac] = false
+
 				h.rwMutex.Unlock()
 			}
 		case mac := <-h.resetTimer:
