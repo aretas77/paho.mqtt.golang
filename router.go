@@ -197,25 +197,21 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 					}
 				}
 
-				// Hermes message was processed - we can stop further processing.
-				if sent {
-					r.RUnlock()
-					return
-				}
-
 				handlers := []MessageHandler{}
-				for e := r.routes.Front(); e != nil; e = e.Next() {
-					if e.Value.(*route).match(message.TopicName) {
-						if order {
-							handlers = append(handlers, e.Value.(*route).callback)
-						} else {
-							hd := e.Value.(*route).callback
-							go func() {
-								hd(client, m)
-								m.Ack()
-							}()
+				if !sent {
+					for e := r.routes.Front(); e != nil; e = e.Next() {
+						if e.Value.(*route).match(message.TopicName) {
+							if order {
+								handlers = append(handlers, e.Value.(*route).callback)
+							} else {
+								hd := e.Value.(*route).callback
+								go func() {
+									hd(client, m)
+									m.Ack()
+								}()
+							}
+							sent = true
 						}
-						sent = true
 					}
 				}
 				if !sent && r.defaultHandler != nil {
