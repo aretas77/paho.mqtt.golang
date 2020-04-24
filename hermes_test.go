@@ -11,6 +11,50 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	defaultNoSendInterval = time.Second * 1
+)
+
+func TestRequestNewInterval(t *testing.T) {
+	clientOptions := NewClientOptions()
+	mac := "AA:BB:CC:DD:EE:FF"
+
+	// Override some default values
+	clientOptions.UseHermes = true
+	clientOptions.SetClientID("device-test")
+	clientOptions.AddBroker("tcp://172.18.0.3:1883")
+	clientOptions.SetUsername("devices")
+	clientOptions.SetPassword("secretkey987")
+	clientOptions.SetCleanSession(true)
+	clientOptions.SetProtocolVersion(3)
+	client := NewClient(clientOptions)
+
+	token := client.Connect()
+	if token.WaitTimeout(time.Minute * 2); token.Error() != nil {
+		t.Fatalf("client failed to connect: %s", token.Error())
+	}
+	assert.True(t, client.IsConnected())
+
+	// grab the Hermes reader
+	hermes := client.HermesReader()
+
+	// get the current send interval
+	old_interval := hermes.CallGetCurrentSendInterval(mac)
+	assert.Equal(t, old_interval, defaultNoSendInterval)
+
+	// send a request to the Hades server
+	if err := hermes.CallRequestNewInterval(client, mac); err != nil {
+		t.Fatalf("hermes failed to request a new interval: %s", err)
+	}
+
+	// wait for response
+	time.Sleep(time.Second * 2)
+
+	// check if interval updated
+	current_interval := hermes.CallGetCurrentSendInterval(mac)
+	assert.NotEqual(t, current_interval, old_interval)
+}
+
 func TestRequestNewModel(t *testing.T) {
 	clientOptions := NewClientOptions()
 	mac := "AA:BB:CC:DD:EE:FF"
@@ -46,6 +90,39 @@ func TestRequestNewModel(t *testing.T) {
 	// check if file exists
 	_, err := os.Stat(path)
 	assert.False(t, os.IsNotExist(err))
+}
+
+func TestGetSetSendInterval(t *testing.T) {
+	clientOptions := NewClientOptions()
+	mac := "AA:BB:CC:DD:EE:FF"
+
+	// Override some default values
+	clientOptions.UseHermes = true
+	clientOptions.SetClientID("device-test")
+	clientOptions.AddBroker("tcp://172.18.0.3:1883")
+	clientOptions.SetUsername("devices")
+	clientOptions.SetPassword("secretkey987")
+	clientOptions.SetCleanSession(true)
+	clientOptions.SetProtocolVersion(3)
+	client := NewClient(clientOptions)
+
+	token := client.Connect()
+	if token.WaitTimeout(time.Minute * 2); token.Error() != nil {
+		t.Fatalf("client failed to connect: %s", token.Error())
+	}
+	assert.True(t, client.IsConnected())
+
+	// Check the default value
+	hermes := client.HermesReader()
+	current_interval := hermes.CallGetCurrentSendInterval(mac)
+	assert.Equal(t, current_interval, defaultNoSendInterval)
+
+	// Check the custom set interval - wait for a bit
+	// XXX: implement token system for sendTimer
+	hermes.CallSetSendInterval(mac, time.Minute*5)
+	time.Sleep(time.Second * 2)
+	current_interval = hermes.CallGetCurrentSendInterval(mac)
+	assert.Equal(t, current_interval, time.Minute*5)
 }
 
 func TestSaveModel(t *testing.T) {
