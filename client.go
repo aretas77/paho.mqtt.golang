@@ -658,7 +658,7 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 	// for QoS >= 1 we can bypass the Hermes timer algorithm, otherwise -
 	// drop the packet if the timer for a particular MAC device does not allow
 	// publishing packets.
-	if c.useHermes && qos < 1 && !c.hermes.GetCanSend(mac) {
+	if c.useHermes && qos < 1 && !c.hermes.GetCanSend(c, mac) {
 		token.setError(fmt.Errorf("QoS too small or send disabled"))
 		return token
 	}
