@@ -15,6 +15,18 @@ const (
 	defaultNoSendInterval = time.Second * 1
 )
 
+func TestCheckNewInterval(t *testing.T) {
+	hermes := &hermes{}
+	mac := "AA:BB:CC:DD:EE:FF"
+	hermes.Initialize()
+
+	assert.Equal(t, 0, hermes.counter[mac])
+
+	hermes.counter[mac] = 4
+	hermes.checkNeedNewInterval(nil, mac)
+	assert.Equal(t, 0, hermes.counter[mac])
+}
+
 func TestRequestNewInterval(t *testing.T) {
 	clientOptions := NewClientOptions()
 	mac := "AA:BB:CC:DD:EE:FF"
@@ -176,7 +188,7 @@ func TestGetCanSend(t *testing.T) {
 	assert.Len(t, hermes.sendTicker, count, "sendTicker wrong len")
 
 	for _, data := range testData {
-		assert.Equal(t, data.expectedCanSend, hermes.GetCanSend(data.mac))
+		assert.Equal(t, data.expectedCanSend, hermes.GetCanSend(nil, data.mac))
 	}
 }
 
@@ -195,4 +207,8 @@ func TestParseMac(t *testing.T) {
 	for _, test := range topicTests {
 		assert.Equal(t, test.result, parseTopicMac(test.topic), "Result is invalid")
 	}
+}
+
+func TestReset(t *testing.T) {
+
 }

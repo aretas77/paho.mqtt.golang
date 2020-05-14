@@ -36,6 +36,7 @@ type hermes struct {
 	lastModelUpdate time.Time
 	initialModel    bool
 
+	counter             map[string]int
 	currentSendInterval map[string]time.Duration
 	sendTicker          map[string]*time.Ticker
 	canSend             map[string]bool
@@ -46,9 +47,6 @@ type hermes struct {
 	// these are control channels which are used to control the timer.
 	setTimer   chan *Timer
 	resetTimer chan string
-
-	serverAlive bool
-	lastCheck   time.Time
 }
 
 // timer struct will be used to send the data to set the timer durations for
@@ -77,8 +75,8 @@ type RequestModelPayload struct {
 // SendIntervalPayload contains data for the hermes to process the received
 // send interval change request.
 type SendIntervalPayload struct {
-	MAC          string `json:"mac"`
-	SendInterval int    `json:"send_interval"`
+	MAC          string  `json:"mac"`
+	SendInterval float32 `json:"send_interval"`
 }
 
 // Initialize will initialize the hermes structure which will be responsible
@@ -94,6 +92,7 @@ func (h *hermes) Initialize() {
 	h.canSend = make(map[string]bool)
 	h.sendTicker = make(map[string]*time.Ticker)
 	h.currentSendInterval = make(map[string]time.Duration)
+	h.counter = make(map[string]int)
 
 	h.initialModel = true
 	h.interpreter = python3.PyImport_ImportModule("interpreter")
@@ -115,6 +114,17 @@ func (h *hermes) saveModel(model []byte, mac string) {
 	err := ioutil.WriteFile(modelName, model, 0644)
 	if err != nil {
 		ERROR.Println(err)
+	}
+}
+
+// checkNeedNewInterval will check whether the counter has reached the required
+// count and request a new interval if it did.
+func (h *hermes) checkNeedNewInterval(c *client, mac string) {
+	if h.counter[mac] >= 4 {
+		if c != nil {
+			h.RequestNewInterval(c, mac)
+		}
+		h.counter[mac] = 0
 	}
 }
 
@@ -155,7 +165,7 @@ func (h *hermes) GetCurrentSendInterval(mac string) time.Duration {
 // GetCanSend will return whether the timer allows to send the data for the
 // library. It will wait for the ticker to finish and set the canSend flag or
 // set canSend as false by default (if ticker hasn't ticked).
-func (h *hermes) GetCanSend(mac string) bool {
+func (h *hermes) GetCanSend(c *client, mac string) bool {
 	h.rwMutex.Lock()
 	defer h.rwMutex.Unlock()
 
@@ -167,6 +177,11 @@ func (h *hermes) GetCanSend(mac string) bool {
 	select {
 	case <-h.sendTicker[mac].C:
 		h.canSend[mac] = true
+		h.counter[mac]++
+
+		if c != nil {
+			h.checkNeedNewInterval(c, mac)
+		}
 	default:
 		h.canSend[mac] = false
 	}
@@ -200,6 +215,7 @@ func (h *hermes) RequestNewModel(c Client, mac string) error {
 	return nil
 }
 
+// RequestNewInterval ...
 func (h *hermes) RequestNewInterval(c Client, mac string) error {
 	payload := RequestModelPayload{
 		MAC:             mac,
@@ -220,12 +236,6 @@ func (h *hermes) RequestNewInterval(c Client, mac string) error {
 	}
 
 	return nil
-}
-
-func (h *hermes) IsConnectedHades() bool {
-	h.rwMutex.RLock()
-	defer h.rwMutex.RUnlock()
-	return h.serverAlive
 }
 
 // HandleReceiveModel is called when a model was received. Interpreter should
@@ -262,7 +272,7 @@ func (h *hermes) HandleReceiveInterval(c Client, msg Message) {
 		return
 	}
 
-	WARN.Println(HER, "received new interval")
+	WARN.Println(HER, "received new interval = ", payload.SendInterval)
 	h.setTimer <- &Timer{
 		duration:  time.Minute * time.Duration(payload.SendInterval),
 		timerType: TimerSendInterval,
@@ -318,6 +328,8 @@ func (h *hermes) sendTimer(c *client) {
 				h.currentSendInterval[mac] = newTime.duration
 				h.sendTicker[mac] = time.NewTicker(newTime.duration)
 				h.canSend[mac] = false
+
+				h.checkNeedNewInterval(c, mac)
 
 				h.rwMutex.Unlock()
 			}
