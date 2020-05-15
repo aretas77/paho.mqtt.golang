@@ -154,6 +154,7 @@ func NewClient(o *ClientOptions) Client {
 		c.useHermes = false
 	}
 
+	WARN.Printf("useHermes = %t", c.useHermes)
 	if c.useHermes {
 		c.hermes = &hermes{}
 		c.hermes.batteryLeftMah = o.HermesOptions.BatteryLeftMah
