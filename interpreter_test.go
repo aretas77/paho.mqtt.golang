@@ -13,15 +13,16 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestPythonInitialization(t *testing.T) {
+func TestPythonHermesInitialization(t *testing.T) {
 	randomString := "random"
 
 	python3.Py_Initialize()
-	defer python3.Py_Finalize()
+	//defer python3.Py_Finalize()
 
 	// get the module named interpreter
 	obj := python3.PyImport_ImportModule("interpreter")
 	assert.NotNil(t, obj)
+	defer obj.DecRef()
 
 	// encode a string as PyUnicode type obj
 	args := python3.PyUnicode_FromString(randomString)
@@ -38,9 +39,9 @@ func TestPythonInitialization(t *testing.T) {
 	assert.Equal(t, randomString, python3.PyUnicode_AsUTF8(out))
 }
 
-func TestPythonCallMethod(t *testing.T) {
+func TestPythonHermesCallMethod(t *testing.T) {
 	python3.Py_Initialize()
-	defer python3.Py_Finalize()
+	//defer python3.Py_Finalize()
 
 	s := python3.PyUnicode_FromString("hello world")
 	assert.True(t, python3.PyUnicode_Check(s))
@@ -70,13 +71,13 @@ func TestPythonCallMethod(t *testing.T) {
 	words.DecRef()
 }
 
-func TestModelInference(t *testing.T) {
+func TestPythonHermesModelInference(t *testing.T) {
 	python3.Py_Initialize()
-	defer python3.Py_Finalize()
+	//defer python3.Py_Finalize()
 
-	// get the module named interpreter
 	obj := python3.PyImport_ImportModule("interpreter")
 	assert.NotNil(t, obj)
+	defer obj.DecRef()
 
 	callable := python3.PyUnicode_FromString("test_inference")
 	assert.True(t, python3.PyUnicode_Check(callable))

@@ -15,9 +15,9 @@ const (
 	defaultNoSendInterval = time.Second * 1
 )
 
-func TestCheckNewInterval(t *testing.T) {
+func TestHermesCheckNewInterval(t *testing.T) {
 	hermes := &hermes{}
-	mac := "AA:BB:CC:DD:EE:FF"
+	mac := "00:00:00:00:00:00"
 	hermes.Initialize()
 
 	assert.Equal(t, 0, hermes.counter[mac])
@@ -27,9 +27,9 @@ func TestCheckNewInterval(t *testing.T) {
 	assert.Equal(t, 0, hermes.counter[mac])
 }
 
-func TestRequestNewInterval(t *testing.T) {
+func TestHermesRequestNewInterval(t *testing.T) {
 	clientOptions := NewClientOptions()
-	mac := "AA:BB:CC:DD:EE:FF"
+	mac := "00:00:00:00:00:00"
 
 	// Override some default values
 	clientOptions.UseHermes = true
@@ -67,9 +67,9 @@ func TestRequestNewInterval(t *testing.T) {
 	assert.NotEqual(t, current_interval, old_interval)
 }
 
-func TestRequestNewModel(t *testing.T) {
+func TestHermesRequestNewModel(t *testing.T) {
 	clientOptions := NewClientOptions()
-	mac := "AA:BB:CC:DD:EE:FF"
+	mac := "00:00:00:00:00:00"
 
 	path := fmt.Sprintf("models/model_%s.tflite", mac)
 	os.Remove(path)
@@ -102,11 +102,13 @@ func TestRequestNewModel(t *testing.T) {
 	// check if file exists
 	_, err := os.Stat(path)
 	assert.False(t, os.IsNotExist(err))
+
+	hermes.Finalize()
 }
 
-func TestGetSetSendInterval(t *testing.T) {
+func TestHermesGetSetSendInterval(t *testing.T) {
 	clientOptions := NewClientOptions()
-	mac := "AA:BB:CC:DD:EE:FF"
+	mac := "00:00:00:00:00:00"
 
 	// Override some default values
 	clientOptions.UseHermes = true
@@ -137,10 +139,10 @@ func TestGetSetSendInterval(t *testing.T) {
 	assert.Equal(t, current_interval, time.Minute*5)
 }
 
-func TestSaveModel(t *testing.T) {
+func TestHermesSaveModel(t *testing.T) {
 	modelData := []byte{0x1c, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33}
 	hermes := &hermes{}
-	mac := "testMac"
+	mac := "00:00:00:00:00:00"
 
 	// save test model data
 	hermes.saveModel(modelData, mac)
@@ -158,7 +160,7 @@ func TestSaveModel(t *testing.T) {
 	}
 }
 
-func TestGetCanSend(t *testing.T) {
+func TestHermesGetCanSend(t *testing.T) {
 	hermes := hermes{}
 	testData := []struct {
 		mac             string
@@ -187,12 +189,13 @@ func TestGetCanSend(t *testing.T) {
 	assert.Len(t, hermes.canSend, count, "canSend wrong len")
 	assert.Len(t, hermes.sendTicker, count, "sendTicker wrong len")
 
+	time.Sleep(time.Second)
 	for _, data := range testData {
 		assert.Equal(t, data.expectedCanSend, hermes.GetCanSend(nil, data.mac))
 	}
 }
 
-func TestParseMac(t *testing.T) {
+func TestHermesParseMac(t *testing.T) {
 	var topicTests = []struct {
 		topic  string
 		result string
@@ -207,8 +210,4 @@ func TestParseMac(t *testing.T) {
 	for _, test := range topicTests {
 		assert.Equal(t, test.result, parseTopicMac(test.topic), "Result is invalid")
 	}
-}
-
-func TestReset(t *testing.T) {
-
 }

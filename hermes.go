@@ -31,10 +31,11 @@ type hermes struct {
 	interpreter *python3.PyObject
 
 	// not used - should only be used for one device to be aware of its power.
-	batteryLeftMah  float32
-	totalBatteryMah float32
-	lastModelUpdate time.Time
-	initialModel    bool
+	batteryLeftMah    float32
+	totalBatteryMah   float32
+	lastModelUpdate   time.Time
+	initialModel      bool
+	sendLoopOperating bool
 
 	counter             map[string]int
 	currentSendInterval map[string]time.Duration
@@ -47,6 +48,7 @@ type hermes struct {
 	// these are control channels which are used to control the timer.
 	setTimer   chan *Timer
 	resetTimer chan string
+	stop       chan struct{}
 }
 
 // timer struct will be used to send the data to set the timer durations for
@@ -84,8 +86,11 @@ type SendIntervalPayload struct {
 func (h *hermes) Initialize() {
 	python3.Py_Initialize()
 
+	h.sendLoopOperating = false
+
 	// a common channel for setting new values for a Timer.
 	h.setTimer = make(chan *Timer)
+	h.stop = make(chan struct{})
 
 	// for each device we have a unique canSend flag and a unique timer.
 	h.resetTimer = make(chan string)
@@ -282,7 +287,14 @@ func (h *hermes) HandleReceiveInterval(c Client, msg Message) {
 
 // Reset will reset the Hermes framework.
 func (h *hermes) Reset() {
-	python3.Py_Finalize()
+	//python3.Py_Finalize()
+	if h.sendLoopOperating {
+		h.stop <- struct{}{}
+	}
+
+	//close(h.stop)
+	//close(h.setTimer)
+	//close(h.resetTimer)
 }
 
 // ResetCanSend is used to reset the flag which indicates that Publish is
@@ -299,6 +311,10 @@ func (h *hermes) ResetCanSend(mac string) {
 //	  is allowed or not.
 //	* The timer will handle the setting of a new value for the mac <> ticker.
 func (h *hermes) sendTimer(c *client) {
+	h.rwMutex.Lock()
+	h.sendLoopOperating = true
+	h.rwMutex.Unlock()
+
 	defer c.workers.Done()
 	defer func() {
 		h.rwMutex.Lock()
@@ -341,6 +357,8 @@ func (h *hermes) sendTimer(c *client) {
 			h.sendTicker[mac].Stop()
 			h.sendTicker[mac] = time.NewTicker(h.currentSendInterval[mac])
 			h.rwMutex.Unlock()
+		case <-h.stop:
+			break
 		}
 	}
 }

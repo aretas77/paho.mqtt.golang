@@ -31,3 +31,7 @@ func (r *ClientHermesReader) GetHandlers() []TopicHandler {
 	h := r.hermes.handlers
 	return h
 }
+
+func (r *ClientHermesReader) Finalize() {
+	r.hermes.Reset()
+}
